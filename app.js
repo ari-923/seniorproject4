@@ -1,6 +1,6 @@
-// ===== Blueprint Flooring Estimator (Rectangle Drag) + FAQ Chatbot =====
+// ===== Blueprint Flooring Estimator (Drag Rectangle) + Helper Chatbot =====
 
-// --------- Estimator (your original idea) ----------
+// -------- Estimator --------
 const fileInput = document.getElementById("fileInput");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -14,7 +14,7 @@ let imgLoaded = false;
 let isDragging = false;
 let dragStart = null; // {x,y}
 let dragEnd = null;   // {x,y}
-let savedRects = [];  // optional multi-selection
+let savedRects = [];  // optional: multiple rectangles
 
 function setStatus(msg) {
   statusEl.textContent = "Status: " + msg;
@@ -67,9 +67,7 @@ function draw() {
   ctx.save();
   ctx.lineWidth = 2;
   ctx.strokeStyle = "green";
-  for (const r of savedRects) {
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-  }
+  for (const r of savedRects) ctx.strokeRect(r.x, r.y, r.w, r.h);
   ctx.restore();
 
   // Current drag rectangle
@@ -84,6 +82,7 @@ function draw() {
   }
 }
 
+// Upload
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files?.[0];
   if (!file) return;
@@ -95,12 +94,15 @@ fileInput.addEventListener("change", (e) => {
     savedRects = [];
     dragStart = null;
     dragEnd = null;
-    setStatus("Image loaded. Drag a rectangle over the flooring area.");
     areaOut.textContent = "—";
+    setStatus("Image loaded. Drag a rectangle over the room area.");
     draw();
 
-    // Chat bot greeting
-    chatAddBot("Blueprint loaded! Drag a rectangle over the room, then enter the real width and height when prompted.\nYou can ask me: “what is sqft?”, “how many boxes do I need?”, “what waste factor should I use?”");
+    chatAddBot(
+      "Blueprint loaded ✅\n" +
+      "Drag a rectangle over the room, then enter the real width & height (feet).\n" +
+      "Ask me: “what is sqft?”, “add 10% waste”, “boxes for 480 sqft at 20 sqft per box”."
+    );
   };
   img.src = url;
 });
@@ -111,7 +113,7 @@ canvas.addEventListener("mousedown", (e) => {
   isDragging = true;
   dragStart = canvasPointFromMouse(e);
   dragEnd = dragStart;
-  setStatus("Dragging... release to finish.");
+  setStatus("Dragging… release to finish.");
   draw();
 });
 
@@ -137,7 +139,6 @@ canvas.addEventListener("mouseup", () => {
     return;
   }
 
-  // Ask user for real-world dimensions
   const realW = prompt("Enter REAL width of this selected area (feet):", "10");
   const realH = prompt("Enter REAL height of this selected area (feet):", "12");
 
@@ -153,19 +154,23 @@ canvas.addEventListener("mouseup", () => {
   }
 
   const sqft = wNum * hNum;
-
   savedRects.push(r);
+
   areaOut.textContent = `${sqft.toFixed(2)} sq ft (last selection)`;
   setStatus("Saved. Drag another rectangle to add more areas.");
 
-  chatAddBot(`Saved selection: ${sqft.toFixed(2)} sq ft.\nIf you want boxes estimate, ask: “boxes for ${sqft.toFixed(2)} sqft at 20 sqft per box”.`);
+  chatAddBot(
+    `Saved selection: ${sqft.toFixed(2)} sq ft.\n` +
+    `Want boxes? Ask: “boxes for ${sqft.toFixed(2)} sqft at 20 sqft per box”.\n` +
+    `Want waste? Ask: “add 10% waste”.`
+  );
 
   dragStart = null;
   dragEnd = null;
   draw();
 });
 
-// --------- FAQ Chatbot (Rule-Based) ----------
+// -------- Helper Chatbot (Rule-Based FAQ) --------
 const chatlog = document.getElementById("chatlog");
 const chatInput = document.getElementById("chatInput");
 const chatSend = document.getElementById("chatSend");
@@ -177,7 +182,6 @@ function chatAddMessage(text, who) {
   chatlog.appendChild(div);
   chatlog.scrollTop = chatlog.scrollHeight;
 }
-
 function chatAddUser(text) { chatAddMessage(text, "user"); }
 function chatAddBot(text)  { chatAddMessage(text, "bot"); }
 
@@ -189,93 +193,56 @@ function normalize(s) {
     .trim();
 }
 
-// Quick parsing helpers for “boxes” questions
-function parseNumberNear(text, keyword) {
-  // grabs first number that appears after the keyword
-  const idx = text.indexOf(keyword);
-  if (idx === -1) return null;
-  const after = text.slice(idx + keyword.length);
-  const match = after.match(/(-?\d+(\.\d+)?)/);
-  return match ? Number(match[1]) : null;
-}
-
-function parseSqft(text) {
-  // tries to find “X sqft” or “X sq ft” or just first number
-  const m = text.match(/(\d+(\.\d+)?)\s*(sq\s*ft|sqft)/i);
+function parseSqft(raw) {
+  const m = raw.match(/(\d+(\.\d+)?)\s*(sq\s*ft|sqft)/i);
   if (m) return Number(m[1]);
-  const any = text.match(/(\d+(\.\d+)?)/);
+  const any = raw.match(/(\d+(\.\d+)?)/);
   return any ? Number(any[1]) : null;
 }
 
-function handleChat(userTextRaw) {
-  const userText = normalize(userTextRaw);
+function handleChat(rawText) {
+  const t = normalize(rawText);
 
-  // Greetings
-  if (/(^hi$|^hello$|^hey$|good morning|good afternoon|good evening)/.test(userText)) {
+  // greetings
+  if (/^(hi|hello|hey)$/.test(t) || t.includes("good morning") || t.includes("good afternoon") || t.includes("good evening")) {
     return "Hi! Ask me how to use the estimator, what sqft means, waste factor, or boxes needed.";
   }
 
-  // How to use
-  if (userText.includes("how do i use") || userText.includes("how to use") || userText.includes("instructions")) {
+  // how to use
+  if (t.includes("how do i use") || t.includes("how to use") || t.includes("instructions") || t.includes("help")) {
     return (
       "How to use:\n" +
       "1) Upload a blueprint image.\n" +
       "2) Drag a rectangle over the room area.\n" +
-      "3) Enter the real width + height (feet) when prompted.\n" +
+      "3) Enter the real width and height (feet) when prompted.\n" +
       "4) The app shows the square footage.\n\n" +
-      "Tip: For irregular rooms, you can drag multiple rectangles and add them up."
+      "Tip: For irregular rooms, do multiple rectangles and add them up."
     );
   }
 
-  // What is sqft
-  if (userText.includes("what is sqft") || userText.includes("what is sq ft") || userText.includes("square feet")) {
+  // sqft definition
+  if (t.includes("what is sqft") || t.includes("what is sq ft") || t.includes("square feet")) {
     return (
-      "Square footage (sq ft) is area: width × height measured in feet.\n" +
+      "Square footage (sq ft) is area.\n" +
+      "Formula: width × height (in feet).\n" +
       "Example: 10 ft × 12 ft = 120 sq ft."
     );
   }
 
-  // Waste factor
-  if (userText.includes("waste") || userText.includes("extra") || userText.includes("overage")) {
+  // waste factor
+  if (t.includes("waste") || t.includes("overage") || t.includes("extra")) {
     return (
-      "Waste factor is extra flooring to cover cuts, mistakes, and odd angles.\n" +
+      "Waste factor = extra flooring for cuts/mistakes.\n" +
       "Common rule:\n" +
-      "- 10% extra for simple rooms\n" +
-      "- 15% extra for complicated layouts\n" +
-      "- Up to 20% for diagonal patterns"
+      "- 10% extra: simple rooms\n" +
+      "- 15% extra: complex layouts\n" +
+      "- up to 20%: diagonal patterns"
     );
   }
 
-  // Boxes needed: “boxes for 500 sqft at 20 sqft per box”
-  if (userText.includes("box") || userText.includes("boxes")) {
-    const sqft = parseSqft(userTextRaw);
-    // try multiple ways to interpret coverage
-    let coverage = null;
-
-    // “per box”
-    const perBox = userTextRaw.match(/(\d+(\.\d+)?)\s*(sq\s*ft|sqft)\s*(per|\/)\s*box/i);
-    if (perBox) coverage = Number(perBox[1]);
-
-    // “at 20 sqft”
-    if (!coverage) {
-      const at = userTextRaw.match(/at\s+(\d+(\.\d+)?)/i);
-      if (at) coverage = Number(at[1]);
-    }
-
-    if (!sqft) {
-      return "Tell me the total sqft and the coverage per box.\nExample: “boxes for 480 sqft at 20 sqft per box”.";
-    }
-    if (!coverage || coverage <= 0) {
-      return `I see ${sqft} sqft. What’s the coverage per box?\nExample: “${sqft} sqft at 20 sqft per box”.`;
-    }
-
-    const boxes = Math.ceil(sqft / coverage);
-    return `Estimated boxes needed: ceil(${sqft} / ${coverage}) = ${boxes} box(es).\nWant waste factor included? Say: “add 10% waste”.`;
-  }
-
-  // Add waste factor to last computed area (if user asks)
-  if (userText.includes("add") && userText.includes("%") && userText.includes("waste")) {
-    const percMatch = userText.match(/(\d+)\s*%/);
+  // add X% waste using last shown area
+  if (t.includes("add") && t.includes("%") && t.includes("waste")) {
+    const percMatch = t.match(/(\d+)\s*%/);
     const p = percMatch ? Number(percMatch[1]) : null;
 
     const lastAreaText = areaOut.textContent || "";
@@ -285,18 +252,33 @@ function handleChat(userTextRaw) {
     if (!p || p <= 0) return "Tell me the waste percent like: “add 10% waste”.";
     if (!lastSqft) return "I don’t see a saved sqft yet. Drag a rectangle first so we have an area.";
 
-    const newTotal = lastSqft * (1 + p / 100);
-    return `With ${p}% waste: ${lastSqft.toFixed(2)} × (1 + ${p}/100) = ${newTotal.toFixed(2)} sq ft.`;
+    const total = lastSqft * (1 + p / 100);
+    return `With ${p}% waste: ${lastSqft.toFixed(2)} × (1 + ${p}/100) = ${total.toFixed(2)} sq ft.`;
   }
 
-  // Default fallback
+  // boxes estimate
+  if (t.includes("box") || t.includes("boxes")) {
+    const sqft = parseSqft(rawText);
+    const coverageMatch = rawText.match(/(\d+(\.\d+)?)\s*(sq\s*ft|sqft)\s*(per|\/)\s*box/i);
+    const atMatch = rawText.match(/at\s+(\d+(\.\d+)?)/i);
+
+    const coverage = coverageMatch ? Number(coverageMatch[1]) : (atMatch ? Number(atMatch[1]) : null);
+
+    if (!sqft) return "Tell me total sqft and coverage per box.\nExample: “boxes for 480 sqft at 20 sqft per box”.";
+    if (!coverage || coverage <= 0) return `I see ${sqft} sqft. What’s the coverage per box?\nExample: “${sqft} sqft at 20 sqft per box”.`;
+
+    const boxes = Math.ceil(sqft / coverage);
+    return `Estimated boxes: ceil(${sqft} / ${coverage}) = ${boxes} box(es).`;
+  }
+
+  // fallback
   return (
     "I can help with:\n" +
-    "- How to use the estimator\n" +
-    "- What sq ft means\n" +
-    "- Waste factor recommendations\n" +
-    "- Estimating boxes needed\n\n" +
-    "Try asking: “how do I use this?” or “boxes for 480 sqft at 20 sqft per box”."
+    "- using the estimator\n" +
+    "- what sq ft means\n" +
+    "- waste factor\n" +
+    "- boxes needed\n\n" +
+    "Try: “how do I use this?” or “boxes for 480 sqft at 20 sqft per box”."
   );
 }
 
@@ -305,8 +287,7 @@ function sendChat() {
   if (!text) return;
   chatAddUser(text);
   chatInput.value = "";
-  const reply = handleChat(text);
-  chatAddBot(reply);
+  chatAddBot(handleChat(text));
 }
 
 chatSend.addEventListener("click", sendChat);
@@ -314,8 +295,11 @@ chatInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") sendChat();
 });
 
-// Initial greeting
+// initial message
 chatAddBot(
-  "Hi! I’m the helper chatbot for this flooring estimator.\n" +
-  "Ask me how to use it, what sqft means, waste factor, or boxes needed."
+  "Hi! I’m the helper chat for this flooring estimator.\n" +
+  "Ask: “how do I use this?”, “what is sqft?”, “add 10% waste”, “boxes for 480 sqft at 20 sqft per box”."
 );
+
+// initial draw
+draw();
